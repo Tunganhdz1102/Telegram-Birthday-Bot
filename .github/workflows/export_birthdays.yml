@@ -1,0 +1,28 @@
+name: Export birthdays JSON
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 10:00 ICT = 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  export:
+    # Nếu DB local: dùng self-hosted runner. Nếu DB cloud: đổi thành ubuntu-latest
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export birthdays to JSON
+        shell: pwsh
+        env:
+          SQL_CONN: ${{ secrets.SQL_CONN }}
+        run: |
+          ./scripts/export-birthdays.ps1 -SqlConn $env:SQL_CONN -OutFile ./docs/birthdays.json
+
+      - name: Commit JSON
+        run: |
+          git config user.name "actions-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/birthdays.json
+          git diff --cached --quiet || git commit -m "Update birthdays.json"
+          git push
