@@ -1,0 +1,56 @@
+name: Birthday bot (no service)
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 10:00 ICT daily
+    - cron: '0 2 * * 0'   # 09:00 ICT Sunday weekly
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send birthdays
+        env:
+          TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_IDS: ${{ secrets.CHAT_IDS }}         # ví dụ: -1001111111111,-1002222222222
+          JSON_URL: ${{ secrets.PUBLIC_JSON_URL }}  # https://<user>.github.io/<repo>/birthdays.json
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request, datetime
+          token=os.environ['TOKEN']
+          chat_ids=[int(x) for x in os.environ['CHAT_IDS'].split(',') if x.strip()]
+          url=os.environ['JSON_URL']
+          with urllib.request.urlopen(url) as r:
+              data=json.load(r)
+          today=datetime.date.today()
+
+          def send(chat, text):
+              u=f"https://api.telegram.org/bot{token}/sendMessage"
+              body=json.dumps({"chat_id":chat,"text":text}).encode()
+              req=urllib.request.Request(u, body, {"Content-Type":"application/json"})
+              urllib.request.urlopen(req).read()
+
+          # Daily
+          todays=[m for m in data['members'] if m['mm']==today.month and m['dd']==today.day]
+          if todays:
+              names=[('@'+m['username']) if m.get('username') else m['name'] for m in todays]
+              text=f"Hôm nay là ngày {today:%d/%m} — chúc mừng sinh nhật "+", ".join(names)+" 🎉"
+              for chat in chat_ids: send(chat, text)
+
+          # Weekly (Sunday)
+          if today.weekday()==6:
+              nxt=[today+datetime.timedelta(days=i) for i in range(1,8)]
+              pairs=[]
+              for d in nxt:
+                  for m in data['members']:
+                      if m['mm']==d.month and m['dd']==d.day:
+                          pairs.append((d,m))
+              if pairs:
+                  lines=["🎂 Danh sách sinh nhật tuần sau:"]
+                  for d,m in sorted(pairs, key=lambda x:x[0]):
+                      who=('@'+m['username']) if m.get('username') else m['name']
+                      lines.append(f"- {d:%d/%m}: {who}")
+                  text="\n".join(lines)
+                  for chat in chat_ids: send(chat, text)
+          PY
